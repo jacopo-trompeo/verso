@@ -50,7 +50,6 @@ export class CanvasEngine {
         autoDensity: true,
         autoStart: false,
         powerPreference: "high-performance",
-        resizeTo: host,
       });
 
       if (signal.aborted) {
