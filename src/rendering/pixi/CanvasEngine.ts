@@ -3,6 +3,12 @@ import { clamp } from "@/shared/utils/math";
 
 export type CanvasEngineStatus = "unmounted" | "mounting" | "mounted";
 
+const VALID_TRANSITIONS: Record<CanvasEngineStatus, CanvasEngineStatus[]> = {
+  unmounted: ["mounting"],
+  mounting: ["mounted", "unmounted"],
+  mounted: ["unmounted"],
+};
+
 export class CanvasEngine {
   private app?: Application;
   private container?: Container;
@@ -25,12 +31,7 @@ export class CanvasEngine {
   private resizeObserver?: ResizeObserver;
 
   async mount(host: HTMLElement, onReady?: () => void) {
-    if (this.status === "mounting" || this.status === "mounted") {
-      console.warn("Canvas engine is already mounting or mounted");
-      return;
-    }
-
-    this.status = "mounting";
+    this.transitionStatusTo("mounting");
 
     this.mountAbort?.abort();
     this.mountAbort = new AbortController();
@@ -77,13 +78,13 @@ export class CanvasEngine {
       this.resizeObserver = new ResizeObserver(this.handleResize);
       this.resizeObserver.observe(host);
 
-      this.status = "mounted";
+      this.transitionStatusTo("mounted");
       this.handleResize();
       this.requestRender();
       onReady?.();
     } catch (error) {
       if (!signal.aborted) {
-        this.status = "unmounted";
+        this.transitionStatusTo("unmounted");
       }
 
       throw error;
@@ -114,7 +115,7 @@ export class CanvasEngine {
     this.container = undefined;
     this.sprite = undefined;
 
-    this.status = "unmounted";
+    this.transitionStatusTo("unmounted");
   }
 
   private requestRender() {
@@ -129,10 +130,22 @@ export class CanvasEngine {
     });
   }
 
+  private transitionStatusTo(nextStatus: CanvasEngineStatus) {
+    const allowed = VALID_TRANSITIONS[this.status].includes(nextStatus);
+
+    if (!allowed) {
+      throw new Error(
+        `[CanvasEngine] Illegal state transition ignored: ${this.status} -> ${nextStatus}`,
+      );
+    }
+
+    this.status = nextStatus;
+  }
+
   private scene() {
     if (this.status !== "mounted" || !this.app || !this.container) {
       throw new Error(
-        `CanvasEngine: method called while status=${this.status}`,
+        `[CanvasEngine] Method called while status=${this.status}`,
       );
     }
 
