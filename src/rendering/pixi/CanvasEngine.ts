@@ -1,14 +1,15 @@
-import { Application, Container } from "pixi.js";
+import { Application, Container, Sprite, type Texture } from "pixi.js";
 
 export class CanvasEngine {
   private app?: Application;
   private container?: Container;
+  private sprite?: Sprite;
   private host?: HTMLElement;
 
   private generation = 0;
   private renderScheduled = false;
 
-  async mount(host: HTMLElement) {
+  async mount(host: HTMLElement, onReady?: () => void) {
     const generation = ++this.generation;
     this.host = host;
 
@@ -42,6 +43,7 @@ export class CanvasEngine {
     canvas.style.touchAction = "none";
 
     this.requestRender();
+    onReady?.();
   }
 
   destroy() {
@@ -54,6 +56,7 @@ export class CanvasEngine {
     this.app.destroy(true, { children: true });
     this.app = undefined;
     this.container = undefined;
+    this.sprite = undefined;
   }
 
   private requestRender() {
@@ -64,5 +67,22 @@ export class CanvasEngine {
       this.renderScheduled = false;
       this.app?.render();
     });
+  }
+
+  setImage(texture: Texture) {
+    if (!this.container) {
+      throw new Error(
+        "CanvasEngine.setImage() called before mount() completed",
+      );
+    }
+
+    if (this.sprite) {
+      this.container.removeChild(this.sprite);
+      this.sprite.destroy();
+      this.sprite = undefined;
+    }
+
+    this.sprite = new Sprite(texture);
+    this.container.addChild(this.sprite);
   }
 }

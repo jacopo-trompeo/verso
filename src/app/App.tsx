@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import { EditorCanvas } from "@/features/editor-canvas/EditorCanvas";
 import { Toolbar } from "@/features/toolbar/Toolbar";
 import { CanvasEngine } from "@/rendering/pixi/CanvasEngine";
@@ -11,10 +11,13 @@ export function App() {
   }
   const engine = engineRef.current;
 
+  const [ready, setReady] = useState(false);
+  const handleReady = useCallback(() => setReady(true), []);
+
   async function handleUpload(file: File) {
     try {
       const texture = await fileToTexture(file);
-      console.log(texture);
+      engine.setImage(texture);
     } catch (err) {
       console.error("Failed to load image", err);
     }
@@ -22,10 +25,10 @@ export function App() {
 
   return (
     <div className="flex h-screen flex-col">
-      <Toolbar onUpload={handleUpload} />
+      <Toolbar onUpload={handleUpload} disabled={!ready} />
 
       <main className="relative min-h-0 flex-1">
-        <EditorCanvas engine={engine} />
+        <EditorCanvas engine={engine} onReady={handleReady} />
       </main>
     </div>
   );

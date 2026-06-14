@@ -3,10 +3,11 @@ import type { CanvasEngine } from "@/rendering/pixi/CanvasEngine";
 
 interface EditorCanvasProps {
   engine: CanvasEngine;
+  onReady?: () => void;
 }
 
 export function EditorCanvas(props: EditorCanvasProps) {
-  const { engine } = props;
+  const { engine, onReady } = props;
   const hostRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -15,12 +16,12 @@ export function EditorCanvas(props: EditorCanvasProps) {
       return;
     }
 
-    void engine.mount(host);
+    void engine.mount(host, onReady);
 
     return () => {
       engine.destroy();
     };
-  }, [engine]);
+  }, [engine, onReady]);
 
   return <div ref={hostRef} className="absolute inset-0 select-none" />;
 }
