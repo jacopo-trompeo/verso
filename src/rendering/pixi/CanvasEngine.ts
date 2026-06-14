@@ -1,13 +1,16 @@
 import { Application, Container, Sprite, type Texture } from "pixi.js";
 import { clamp } from "@/shared/utils/math";
 
+export type CanvasEngineStatus = "unmounted" | "mounting" | "mounted";
+
 export class CanvasEngine {
   private app?: Application;
   private container?: Container;
   private sprite?: Sprite;
   private host?: HTMLElement;
 
-  private generation = 0;
+  private status: CanvasEngineStatus = "unmounted";
+  private mountAbort?: AbortController;
   private renderScheduled = false;
 
   private isPanning = false;
@@ -22,108 +25,143 @@ export class CanvasEngine {
   private resizeObserver?: ResizeObserver;
 
   async mount(host: HTMLElement, onReady?: () => void) {
-    const generation = ++this.generation;
+    if (this.status === "mounting" || this.status === "mounted") {
+      console.warn("Canvas engine is already mounting or mounted");
+      return;
+    }
+
+    this.status = "mounting";
+
+    this.mountAbort?.abort();
+    this.mountAbort = new AbortController();
+    const { signal } = this.mountAbort;
+
     this.host = host;
 
     const app = new Application();
-    await app.init({
-      preference: "webgpu",
-      antialias: true,
-      backgroundColor: 0x0f0f12,
-      resolution: window.devicePixelRatio ?? 1,
-      autoDensity: true,
-      autoStart: false,
-      powerPreference: "high-performance",
-      resizeTo: host,
-    });
 
-    if (generation !== this.generation) {
-      app.destroy(true, { children: true });
-      return;
+    try {
+      await app.init({
+        preference: "webgpu",
+        antialias: true,
+        backgroundColor: 0x0f0f12,
+        resolution: window.devicePixelRatio ?? 1,
+        autoDensity: true,
+        autoStart: false,
+        powerPreference: "high-performance",
+        resizeTo: host,
+      });
+
+      if (signal.aborted) {
+        app.destroy(true, { children: true });
+        return;
+      }
+
+      this.app = app;
+      this.container = new Container();
+      app.stage.addChild(this.container);
+
+      host.appendChild(app.canvas);
+
+      const { canvas } = app;
+      canvas.setAttribute("aria-label", "Image canvas");
+      canvas.style.cursor = "grab";
+      canvas.style.display = "block";
+      canvas.style.touchAction = "none";
+      canvas.addEventListener("pointerdown", this.onPointerDown);
+      canvas.addEventListener("pointermove", this.onPointerMove);
+      canvas.addEventListener("pointerup", this.onPointerUp);
+      canvas.addEventListener("pointercancel", this.onPointerUp);
+      canvas.addEventListener("wheel", this.onWheel, { passive: false });
+
+      this.resizeObserver = new ResizeObserver(this.handleResize);
+      this.resizeObserver.observe(host);
+
+      this.status = "mounted";
+      this.handleResize();
+      this.requestRender();
+      onReady?.();
+    } catch (error) {
+      if (!signal.aborted) {
+        this.status = "unmounted";
+      }
+
+      throw error;
     }
-
-    this.app = app;
-    this.container = new Container();
-    app.stage.addChild(this.container);
-
-    host.appendChild(app.canvas);
-
-    const { canvas } = app;
-    canvas.setAttribute("aria-label", "Image canvas");
-    canvas.style.cursor = "grab";
-    canvas.style.display = "block";
-    canvas.style.touchAction = "none";
-    canvas.addEventListener("pointerdown", this.onPointerDown);
-    canvas.addEventListener("pointermove", this.onPointerMove);
-    canvas.addEventListener("pointerup", this.onPointerUp);
-    canvas.addEventListener("pointercancel", this.onPointerUp);
-    canvas.addEventListener("wheel", this.onWheel, { passive: false });
-
-    this.resizeObserver = new ResizeObserver(this.handleResize);
-    this.resizeObserver.observe(host);
-
-    this.handleResize();
-    this.requestRender();
-    onReady?.();
   }
 
   destroy() {
-    this.generation++;
-    this.resizeObserver?.disconnect();
-    this.resizeObserver = undefined;
-
-    if (!this.app) {
+    if (this.status === "unmounted") {
       return;
     }
 
-    const { canvas } = this.app;
-    canvas.removeEventListener("pointerdown", this.onPointerDown);
-    canvas.removeEventListener("pointermove", this.onPointerMove);
-    canvas.removeEventListener("pointerup", this.onPointerUp);
-    canvas.removeEventListener("pointercancel", this.onPointerUp);
-    canvas.removeEventListener("wheel", this.onWheel);
+    this.mountAbort?.abort();
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = undefined;
 
-    this.app.destroy(true, { children: true });
+    if (this.app) {
+      const { canvas } = this.app;
+      canvas.removeEventListener("pointerdown", this.onPointerDown);
+      canvas.removeEventListener("pointermove", this.onPointerMove);
+      canvas.removeEventListener("pointerup", this.onPointerUp);
+      canvas.removeEventListener("pointercancel", this.onPointerUp);
+      canvas.removeEventListener("wheel", this.onWheel);
+
+      this.app.destroy(true, { children: true });
+    }
+
     this.app = undefined;
     this.container = undefined;
     this.sprite = undefined;
+
+    this.status = "unmounted";
   }
 
   private requestRender() {
-    if (this.renderScheduled || !this.app) return;
+    if (this.renderScheduled || this.status !== "mounted") return;
     this.renderScheduled = true;
 
     requestAnimationFrame(() => {
       this.renderScheduled = false;
-      this.app?.render();
+      if (this.status === "mounted") {
+        this.app?.render();
+      }
     });
   }
 
-  setImage(texture: Texture) {
-    if (!this.container) {
+  private scene() {
+    if (this.status !== "mounted" || !this.app || !this.container) {
       throw new Error(
-        "CanvasEngine.setImage() called before mount() completed",
+        `CanvasEngine: method called while status=${this.status}`,
       );
     }
 
+    return { app: this.app, container: this.container };
+  }
+
+  setImage(texture: Texture) {
+    const { container } = this.scene();
+
     if (this.sprite) {
-      this.container.removeChild(this.sprite);
+      container.removeChild(this.sprite);
       this.sprite.destroy();
       this.sprite = undefined;
     }
 
     this.sprite = new Sprite(texture);
-    this.container.addChild(this.sprite);
+    container.addChild(this.sprite);
     this.fitToScreen();
   }
 
   fitToScreen() {
-    if (!this.app || !this.container || !this.sprite) {
+    const { app, container } = this.scene();
+
+    if (!this.sprite) {
       return;
     }
 
-    const screenWidth = this.app.screen.width;
-    const screenHeight = this.app.screen.height;
+    const screenWidth = app.screen.width;
+    const screenHeight = app.screen.height;
     const textureWidth = this.sprite.texture.width;
     const textureHeight = this.sprite.texture.height;
 
@@ -135,17 +173,17 @@ export class CanvasEngine {
     const heightScale = screenHeight / textureHeight;
 
     const scale = Math.min(widthScale, heightScale) * this.fitMargin;
-    this.container.scale.set(scale);
+    container.scale.set(scale);
 
     const xPosition = (screenWidth - textureWidth * scale) / 2;
     const yPosition = (screenHeight - textureHeight * scale) / 2;
 
-    this.container.position.set(xPosition, yPosition);
+    container.position.set(xPosition, yPosition);
     this.requestRender();
   }
 
   private handleResize = () => {
-    if (!this.app || !this.host) {
+    if (this.status !== "mounted" || !this.app || !this.host) {
       return;
     }
 
@@ -160,6 +198,10 @@ export class CanvasEngine {
   };
 
   private onPointerDown = (event: PointerEvent) => {
+    if (this.status !== "mounted") {
+      return;
+    }
+
     if (event.button !== 0 && event.button !== 1) {
       return;
     }
@@ -178,7 +220,7 @@ export class CanvasEngine {
   };
 
   private onPointerMove = (event: PointerEvent) => {
-    if (!this.isPanning || !this.container) {
+    if (this.status !== "mounted" || !this.isPanning || !this.container) {
       return;
     }
 
@@ -208,7 +250,8 @@ export class CanvasEngine {
   };
 
   private onWheel = (event: WheelEvent) => {
-    if (!this.app || !this.container) return;
+    if (this.status !== "mounted" || !this.app || !this.container) return;
+
     event.preventDefault();
 
     const canvasBounds = this.app.canvas.getBoundingClientRect();
