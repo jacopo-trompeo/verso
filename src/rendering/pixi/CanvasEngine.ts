@@ -114,6 +114,7 @@ export class CanvasEngine {
     this.app = undefined;
     this.container = undefined;
     this.sprite = undefined;
+    this.isPanning = false;
 
     this.transitionStatusTo("unmounted");
   }
