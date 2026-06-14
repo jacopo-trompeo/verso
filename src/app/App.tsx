@@ -1,3 +1,5 @@
+import { Toolbar } from "@/features/toolbar/Toolbar";
+
 export function App() {
-  return <div>Verso</div>;
+  return <Toolbar onUpload={() => {}} />;
 }
