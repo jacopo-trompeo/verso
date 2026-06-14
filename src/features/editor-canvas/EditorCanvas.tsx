@@ -16,7 +16,7 @@ export function EditorCanvas(props: EditorCanvasProps) {
       return;
     }
 
-    void engine.mount(host, onReady);
+    void engine.mount(host, onReady).catch(console.error);
 
     return () => {
       engine.destroy();
