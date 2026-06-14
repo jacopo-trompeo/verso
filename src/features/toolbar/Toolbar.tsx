@@ -3,11 +3,12 @@ import { Button } from "@/shared/components/ui/button";
 
 interface ToolbarProps {
   onUpload: (file: File) => void;
+  onFit: () => void;
   disabled: boolean;
 }
 
 export function Toolbar(props: ToolbarProps) {
-  const { onUpload, disabled } = props;
+  const { onUpload, onFit, disabled } = props;
   const inputRef = useRef<HTMLInputElement>(null);
 
   return (
@@ -36,6 +37,9 @@ export function Toolbar(props: ToolbarProps) {
           e.target.value = "";
         }}
       />
+      <Button type="button" disabled={disabled} onClick={onFit}>
+        Fit to screen
+      </Button>
     </div>
   );
 }

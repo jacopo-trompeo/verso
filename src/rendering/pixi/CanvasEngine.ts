@@ -84,5 +84,36 @@ export class CanvasEngine {
 
     this.sprite = new Sprite(texture);
     this.container.addChild(this.sprite);
+
+    this.fitToScreen();
+  }
+
+  fitToScreen() {
+    if (!this.app || !this.container || !this.sprite) {
+      return;
+    }
+
+    const screenWidth = this.app.screen.width;
+    const screenHeight = this.app.screen.height;
+    const textureWidth = this.sprite.texture.width;
+    const textureHeight = this.sprite.texture.height;
+
+    if (textureWidth === 0 || textureHeight === 0) {
+      return;
+    }
+
+    const MARGIN = 0.95;
+    const widthScale = screenWidth / textureWidth;
+    const heightScale = screenHeight / textureHeight;
+
+    const scale = Math.min(widthScale, heightScale) * MARGIN;
+    this.container.scale.set(scale);
+
+    const xPosition = (screenWidth - textureWidth * scale) / 2;
+    const yPosition = (screenHeight - textureHeight * scale) / 2;
+
+    this.container.position.set(xPosition, yPosition);
+
+    this.requestRender();
   }
 }

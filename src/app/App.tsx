@@ -25,7 +25,11 @@ export function App() {
 
   return (
     <div className="flex h-screen flex-col">
-      <Toolbar onUpload={handleUpload} disabled={!ready} />
+      <Toolbar
+        onUpload={handleUpload}
+        onFit={() => engine.fitToScreen()}
+        disabled={!ready}
+      />
 
       <main className="relative min-h-0 flex-1">
         <EditorCanvas engine={engine} onReady={handleReady} />
